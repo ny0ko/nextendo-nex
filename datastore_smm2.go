@@ -70,6 +70,7 @@ type SMM2Profil struct {
 	Pays     string
 	Appareil string
 	Unk      [4]uint16
+	Officiel bool
 }
 
 // ResultDataStoreNotFound : l'objet demande n'existe pas. Valeur relevee dans
@@ -407,7 +408,7 @@ func ecrireUserInfo(out *StreamOut, p SMM2Profil) {
 	// Les noms viennent du meme fichier, et ils confirment au passage ce qu'on avait
 	// trouve a la sonde cette nuit : les trois booleens d'avant s'appellent Following,
 	// CommentsEnabled et TagsLocked.
-	champs.Bool(false)                   // IsNintendoEmployee — non, evidemment
+	champs.Bool(p.Officiel || SMM2EstOfficiel(p.PID)) // IsNintendoEmployee (Official Maker!)
 	var dtUpload uint64
 	if st.DerniereUpload > 0 {
 		dtUpload = dateTimeDeUnix(st.DerniereUpload)
@@ -778,6 +779,16 @@ func SMM2MasqueBooleens() uint32 {
 		return 0
 	}
 	return SMM2MasqueBooleensFn()
+}
+
+// SMM2EstOfficielFn : determine si un PID est un createur officiel (Nintendo / Ninji).
+var SMM2EstOfficielFn func(pid uint64) bool
+
+func SMM2EstOfficiel(pid uint64) bool {
+	if SMM2EstOfficielFn != nil {
+		return SMM2EstOfficielFn(pid)
+	}
+	return false
 }
 
 // SMM2PseudoDe et SMM2MiiDe exposent le pseudo et le Mii d'un joueur aux paquets qui en
