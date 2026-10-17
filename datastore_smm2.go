@@ -357,18 +357,9 @@ func ecrireUserInfo(out *StreamOut, p SMM2Profil) {
 	stats(st.Parties, st.Reussites, st.Tentatives, 0)
 
 	// maker_stats : 0 « j'aime » recus, 1 points de createur.
-	//
-	// A zero, et c'est exact : Nextendo n'a pas encore de systeme de notes, donc
-	// personne n'a recu de coeur. Les points de createur en decoulent chez Nintendo.
-	stats(0, 0)
+	stats(st.LikesRecus, st.PointsCreateur)
 
 	// endless_challenge_high_scores : facile, normal, expert, super expert.
-	//
-	// Ces quatre nombres etaient des ZEROS EN DUR, avec la note « parce que le mode sans
-	// fin ne demarre pas encore ». Vrai le jour ou c'etait ecrit, faux depuis qu'il
-	// demarre. C'est le meme piege que SuperWorldId juste plus bas dans cette fonction, et
-	// c'est la deuxieme fois qu'il mord ce fichier : une constante qui dit la verite « pour
-	// le moment » finira par mentir, et le seul remede est d'aller la chercher a la source.
 	rec := SMM2RecordsEndless(p.PID)
 	stats(rec[0], rec[1], rec[2], rec[3])
 
@@ -385,7 +376,7 @@ func ecrireUserInfo(out *StreamOut, p SMM2Profil) {
 	WriteMap(champs, SMM2StatsMultijoueur(p.PID), func(o *StreamOut, k uint8) { o.U8(k) }, func(o *StreamOut, v uint32) { o.U32(v) })
 
 	// unk7 : points de createur de la semaine.
-	stats(0)
+	stats(st.PointsSemaine)
 	WriteList(champs, []struct{}{}, func(o *StreamOut, _ struct{}) {}) // badges
 	// unk8 : premieres reussites, records du monde. Les deux se deduisent du catalogue :
 	// on sait qui a fini chaque niveau le premier et qui en detient le meilleur temps.
@@ -744,6 +735,9 @@ type SMM2StatsJoueur struct {
 	Tentatives         uint32 // essais cumules
 	PremieresReussites uint32 // niveaux dont il est le premier a etre venu a bout
 	Records            uint32 // niveaux dont il detient le meilleur temps
+	LikesRecus         uint32 // coeurs ("j'aime") recus sur ses niveaux (cle 0 de maker_stats)
+	PointsCreateur     uint32 // points de createur totaux (cle 1 de maker_stats)
+	PointsSemaine      uint32 // points de createur de la semaine (cle 0 de unk7)
 }
 
 // SMM2CompteurStats : fourni par le serveur de jeu, qui tient le catalogue et les
