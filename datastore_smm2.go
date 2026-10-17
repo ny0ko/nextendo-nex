@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"strconv"
 	"sync"
+	"time"
 )
 
 // ProtocolDataStoreSMM2 est l'identifiant du protocole DataStore specifique a SMM2.
@@ -278,6 +279,7 @@ func SMM2ProfilDe(pid uint64) (SMM2Profil, bool) {
 // Les statistiques partent VIDES : elles sont vraies. Ce joueur n'a rien joue encore.
 func ecrireUserInfo(out *StreamOut, p SMM2Profil) {
 	s := out.Settings
+	st := SMM2StatsDe(p.PID)
 
 	champs := NewStreamOut(s)
 	champs.PID(p.PID)
@@ -300,9 +302,14 @@ func ecrireUserInfo(out *StreamOut, p SMM2Profil) {
 	champs.QBuffer(p.Mii) // le Mii, tel quel
 	champs.String(SMM2Pays(p.PID, p.Pays)) // le pays choisi sur le site, sinon celui declare
 	champs.U8(0) // region
-	// last_active : la date d'epoque EMPAQUETEE, jamais zero. Zero n'est pas une date
-	// dans un champ de bits — c'est l'an 0, mois 0, jour 0.
-	champs.DateTime(dateTimeEpoqueNex())
+	// last_active : date de derniere activite (joueur vu pour la derniere fois)
+	var dtActivite uint64
+	if st.DerniereActivite > 0 {
+		dtActivite = dateTimeDeUnix(st.DerniereActivite)
+	} else {
+		dtActivite = uint64(NowDateTime())
+	}
+	champs.DateTime(dtActivite)
 	// TROIS BOOLEENS INCONNUS, et l'un d'eux restreint probablement les commentaires.
 	//
 	// Le jeu dit « le CREATEUR du niveau les a restreints ». C'est donc un reglage du
@@ -347,7 +354,6 @@ func ecrireUserInfo(out *StreamOut, p SMM2Profil) {
 	// La capture Nintendo du 2026-10-02 a depuis corrige cette ancienne deduction :
 	// multiplayer_stats porte bien les quinze cles 0 a 14, dont la cle 1 = 1 pour un
 	// compte sans parties versus. Le jeu fournit les valeurs via SMM2StatsMultijoueur.
-	st := SMM2StatsDe(p.PID)
 
 	// play_stats : 0 parties, 1 reussites, 2 tentatives, 3 morts.
 	//
@@ -402,8 +408,14 @@ func ecrireUserInfo(out *StreamOut, p SMM2Profil) {
 	// trouve a la sonde cette nuit : les trois booleens d'avant s'appellent Following,
 	// CommentsEnabled et TagsLocked.
 	champs.Bool(false)                   // IsNintendoEmployee — non, evidemment
-	champs.DateTime(dateTimeEpoqueNex()) // LastUploadedLevel
-	champs.Bool(false)                   // Unk12
+	var dtUpload uint64
+	if st.DerniereUpload > 0 {
+		dtUpload = dateTimeDeUnix(st.DerniereUpload)
+	} else {
+		dtUpload = dateTimeEpoqueNex()
+	}
+	champs.DateTime(dtUpload) // LastUploadedLevel
+	champs.Bool(false)        // Unk12
 
 	// Unk13 : structure imbriquee { Bool, DateTime }.
 	u13 := NewStreamOut(s)
@@ -738,6 +750,8 @@ type SMM2StatsJoueur struct {
 	LikesRecus         uint32 // coeurs ("j'aime") recus sur ses niveaux (cle 0 de maker_stats)
 	PointsCreateur     uint32 // points de createur totaux (cle 1 de maker_stats)
 	PointsSemaine      uint32 // points de createur de la semaine (cle 0 de unk7)
+	DerniereActivite   int64  // instant Unix de la derniere activite / partie jouee (last_active)
+	DerniereUpload     int64  // instant Unix du dernier niveau publie (LastUploadedLevel)
 }
 
 // SMM2CompteurStats : fourni par le serveur de jeu, qui tient le catalogue et les
@@ -786,4 +800,13 @@ func SMM2MiiDe(pid uint64) []byte {
 // valide dans ce format — c'est un champ de bits, et zero y designe l'an 0.
 func dateTimeEpoqueNex() uint64 {
 	return uint64(MakeDateTime(1970, 1, 1, 0, 0, 0))
+}
+
+// dateTimeDeUnix convertit un timestamp Unix en DateTime NEX (UTC).
+func dateTimeDeUnix(unix int64) uint64 {
+	if unix <= 0 {
+		return dateTimeEpoqueNex()
+	}
+	t := time.Unix(unix, 0).UTC()
+	return uint64(MakeDateTime(t.Year(), int(t.Month()), t.Day(), t.Hour(), t.Minute(), t.Second()))
 }
