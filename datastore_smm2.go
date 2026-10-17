@@ -504,7 +504,19 @@ func profilPourIdentifiant(demande, appelant uint64) (SMM2Profil, bool) {
 		}
 	}
 	if demande == appelant {
-		return SMM2Profil{}, false
+		// Le joueur demande SON propre profil et n'en a pas encore cree :
+		// on auto-provisionne un profil par defaut avec son pseudo pour qu'il
+		// ne commence pas sans nom de Maker.
+		p := SMM2Profil{
+			PID:    demande,
+			Nom:    nomDefautPourPID(demande),
+			Unk:    [4]uint16{0, 0, 0, 0},
+			Langue: 1,
+			Pays:   "US",
+		}
+		smm2Profils.Store(demande, p)
+		smm2SauverProfils()
+		return p, true
 	}
 	return SMM2Profil{}, false
 }
@@ -565,6 +577,21 @@ const smm2QuotaPublication uint32 = 32
 // smm2MaxPublications : plafond de niveaux publiables annonce dans UserInfo.unk9[1].
 // Le champ unk9 est nomme par MariOver : [0] = deja publies, [1] = maximum.
 const smm2MaxPublications uint32 = 32
+
+// SMM2NomDefautFn : fourni par le jeu, rend le Maker Name / pseudo par defaut d'un joueur.
+var SMM2NomDefautFn func(pid uint64) string
+
+func nomDefautPourPID(pid uint64) string {
+	if SMM2NomDefautFn != nil {
+		if n := SMM2NomDefautFn(pid); n != "" {
+			return n
+		}
+	}
+	if loginName, has := LoginNameForPID(pid); has && loginName != "" {
+		return loginName
+	}
+	return fmt.Sprintf("Maker%d", pid%100000)
+}
 
 // SMM2CompteurPublies : combien de niveaux ce joueur a publies.
 //
@@ -667,8 +694,15 @@ func handleDataStoreSyncUserProfile(conn *Connection, req *RMCMessage) *RMCMessa
 	s := conn.Settings
 	p, ok := SMM2ProfilDe(conn.PID)
 	if !ok {
-		// Pas de profil : on le dit franchement plutot que d'en inventer un.
-		return NewRMCError(s, ProtocolDataStoreSMM2, req.CallID, ResultDataStoreNotFound)
+		// Compte frais sans profil SMM2 prealable : on auto-provisionne un profil par defaut
+		// pour que le joueur ne demarre pas sans nom de Maker.
+		p = SMM2Profil{
+			PID:    conn.PID,
+			Nom:    nomDefautPourPID(conn.PID),
+			Unk:    [4]uint16{0, 0, 0, 0},
+			Langue: 1,
+			Pays:   "US",
+		}
 	}
 
 	// LA REQUETE PORTE LE PROFIL A JOUR, ET ON L'IGNORAIT. Mesure chez Nintendo le
@@ -704,8 +738,11 @@ func handleDataStoreSyncUserProfile(conn *Connection, req *RMCMessage) *RMCMessa
 			}
 			smm2Profils.Store(conn.PID, p)
 			smm2SauverProfils()
-			fmt.Printf("[DataStoreSMM2] SyncUserProfile pid=%d : tenue %v enregistree\n", conn.PID, tenue)
+			fmt.Printf("[DataStoreSMM2] SyncUserProfile pid=%d : nom=%q tenue %v enregistree\n", conn.PID, p.Nom, tenue)
 		}
+	} else if !ok {
+		smm2Profils.Store(conn.PID, p)
+		smm2SauverProfils()
 	}
 
 	champs := NewStreamOut(s)
