@@ -388,7 +388,22 @@ func ecrireUserInfo(out *StreamOut, p SMM2Profil) {
 
 	// unk7 : points de createur de la semaine.
 	stats(st.PointsSemaine)
-	WriteList(champs, []struct{}{}, func(o *StreamOut, _ struct{}) {}) // badges
+	badges := []SMM2Badge{}
+	if SMM2BadgesFn != nil {
+		badges = SMM2BadgesFn(p.PID)
+	}
+	WriteList(champs, badges, func(o *StreamOut, b SMM2Badge) {
+		if o.Settings.StructHeader {
+			o.U8(0) // version de BadgeInfo
+			inner := NewStreamOut(o.Settings)
+			inner.U16(b.ID)
+			inner.U8(b.Tier)
+			o.Buffer(inner.Bytes())
+		} else {
+			o.U16(b.ID)
+			o.U8(b.Tier)
+		}
+	})
 	// unk8 : premieres reussites, records du monde. Les deux se deduisent du catalogue :
 	// on sait qui a fini chaque niveau le premier et qui en detient le meilleur temps.
 	stats(st.PremieresReussites, st.Records)
@@ -841,6 +856,15 @@ func SMM2EstSuivi(demandeur, createur uint64) bool {
 	}
 	return false
 }
+
+// SMM2Badge represente une medaille ou ruban officiel sur le profil d'un createur.
+type SMM2Badge struct {
+	ID   uint16 // Categorie (0..9)
+	Tier uint8  // Rang/Niveau : 0 (Or / 1er), 1 (Argent), 2 (Bronze), 3 (Ruban)
+}
+
+// SMM2BadgesFn : fourni par le serveur de jeu, calcule les medailles d'un joueur selon son rang dans les classements.
+var SMM2BadgesFn func(pid uint64) []SMM2Badge
 
 // SMM2PseudoDe et SMM2MiiDe exposent le pseudo et le Mii d'un joueur aux paquets qui en
 // ont besoin hors de cette bibliotheque — les commentaires portent l'un et l'autre.
