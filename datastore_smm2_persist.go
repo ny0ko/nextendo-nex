@@ -31,13 +31,22 @@ var (
 	smm2EcritureMu     sync.Mutex
 )
 
+func fichierProfils() string {
+	if smm2ProfilsFichier != "" {
+		return smm2ProfilsFichier
+	}
+	dir := os.Getenv("STORAGE_DIR")
+	if dir == "" {
+		dir = "."
+	}
+	return filepath.Join(dir, "smm2_profils.json")
+}
+
 // SMM2ChargerProfils relit les profils depuis le disque. A appeler au demarrage.
 // Un fichier absent n'est PAS une erreur : c'est un serveur neuf.
 func SMM2ChargerProfils() {
-	if smm2ProfilsFichier == "" {
-		return
-	}
-	raw, err := os.ReadFile(smm2ProfilsFichier)
+	chemin := fichierProfils()
+	raw, err := os.ReadFile(chemin)
 	if err != nil {
 		if !os.IsNotExist(err) {
 			fmt.Printf("[DataStoreSMM2] profils illisibles (%v) — on repart a vide\n", err)
@@ -58,14 +67,12 @@ func SMM2ChargerProfils() {
 			n++
 		}
 	}
-	fmt.Printf("[DataStoreSMM2] %d profil(s) charge(s) depuis %s\n", n, smm2ProfilsFichier)
+	fmt.Printf("[DataStoreSMM2] %d profil(s) charge(s) depuis %s\n", n, chemin)
 }
 
 // smm2SauverProfils ecrit tous les profils. Appele apres chaque inscription.
 func smm2SauverProfils() {
-	if smm2ProfilsFichier == "" {
-		return
-	}
+	chemin := fichierProfils()
 	smm2EcritureMu.Lock()
 	defer smm2EcritureMu.Unlock()
 
@@ -81,18 +88,16 @@ func smm2SauverProfils() {
 		return
 	}
 
-	tmp := smm2ProfilsFichier + ".tmp"
-	if err := os.MkdirAll(filepath.Dir(smm2ProfilsFichier), 0o755); err != nil {
+	tmp := chemin + ".tmp"
+	if err := os.MkdirAll(filepath.Dir(chemin), 0o755); err != nil {
 		fmt.Printf("[DataStoreSMM2] dossier des profils inaccessible : %v\n", err)
 		return
 	}
-	if err := os.WriteFile(tmp, raw, 0o600); err != nil {
+	if err := os.WriteFile(tmp, raw, 0o644); err != nil {
 		fmt.Printf("[DataStoreSMM2] ecriture des profils impossible : %v\n", err)
 		return
 	}
-	// rename est atomique : ou l'ancien fichier reste entier, ou le nouveau le remplace
-	// entier. Jamais un melange des deux.
-	if err := os.Rename(tmp, smm2ProfilsFichier); err != nil {
+	if err := os.Rename(tmp, chemin); err != nil {
 		fmt.Printf("[DataStoreSMM2] remplacement du fichier de profils impossible : %v\n", err)
 		_ = os.Remove(tmp)
 	}
