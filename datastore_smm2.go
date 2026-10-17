@@ -63,14 +63,15 @@ var smm2Profils sync.Map // uint64 -> SMM2Profil
 
 // SMM2Profil est ce que la console nous envoie a la creation du compte.
 type SMM2Profil struct {
-	PID      uint64
-	Nom      string
-	Mii      []byte // donnees du Mii, opaques : on les stocke, on ne les interprete pas
-	Langue   uint8
-	Pays     string
-	Appareil string
-	Unk      [4]uint16
-	Officiel bool
+	PID       uint64
+	Nom       string
+	Mii       []byte // donnees du Mii, opaques : on les stocke, on ne les interprete pas
+	Langue    uint8
+	Pays      string
+	Appareil  string
+	Unk       [4]uint16
+	Officiel  bool
+	Demandeur uint64 // viewer PID (qui consulte ce profil)
 }
 
 // ResultDataStoreNotFound : l'objet demande n'existe pas. Valeur relevee dans
@@ -175,7 +176,9 @@ func handleDataStoreGetUsers(conn *Connection, req *RMCMessage) *RMCMessage {
 	out.U32(uint32(trouves))
 	for _, r := range rep {
 		if r.trouve {
-			ecrireUserInfo(out, r.profil)
+			prof := r.profil
+			prof.Demandeur = conn.PID
+			ecrireUserInfo(out, prof)
 		}
 	}
 	// results : un code par PID demande, dans le meme ordre.
@@ -311,28 +314,29 @@ func ecrireUserInfo(out *StreamOut, p SMM2Profil) {
 		dtActivite = uint64(NowDateTime())
 	}
 	champs.DateTime(dtActivite)
-	// TROIS BOOLEENS INCONNUS, et l'un d'eux restreint probablement les commentaires.
-	//
-	// Le jeu dit « le CREATEUR du niveau les a restreints ». C'est donc un reglage du
-	// createur, pas du niveau — il vit sur son profil, pas dans la fiche du cours. Ce
-	// sont les seuls drapeaux que nous envoyions dans UserInfo, et ils valaient false.
-	//
-	// La documentation les donne « Unknown » et kinnay les nomme unk3 a unk5 sans plus.
-	// On ne peut pas savoir lequel autrement qu'en essayant, d'ou un masque de bits
-	// reglable sans redeploiement :
-	//
-	//   echo 7 > /opt/smm2/smm2_9998.forme   -> les trois a true  (defaut)
-	//   echo 1 > ...                         -> seul unk3
-	//   echo 2 > ...                         -> seul unk4
-	//   echo 4 > ...                         -> seul unk5
-	//   echo 0 > ...                         -> les trois a false (comportement precedent)
-	// LES TROIS A true. Mesure le 2026-08-24 : a false, le jeu affichait « le createur a
-	// restreint les commentaires ». Le message parlait du CREATEUR, donc du profil et
-	// non de la fiche du niveau — c'est ce qui a mene ici.
+	// LES TROIS BOOLEENS D'UserInfo (decouverts a 0x5f68c8 dans main) :
+	// - unk3 : Following (VRAI seulement si le demandeur suit reellement ce createur !)
+	// - unk4 : CommentsEnabled (autorise les commentaires sur le profil/niveaux)
+	// - unk5 : TagsLocked (verrouillage des etiquettes)
+	var following bool
+	if p.Demandeur != 0 && p.Demandeur != p.PID {
+		following = SMM2EstSuivi(p.Demandeur, p.PID)
+	}
+
 	mBool := SMM2MasqueBooleens()
-	champs.Bool(mBool&1 != 0) // unk3
-	champs.Bool(mBool&2 != 0) // unk4
-	champs.Bool(mBool&4 != 0) // unk5
+	if mBool != 0 {
+		if mBool&1 != 0 {
+			champs.Bool(true)
+		} else {
+			champs.Bool(following)
+		}
+		champs.Bool(mBool&2 != 0)
+		champs.Bool(mBool&4 != 0)
+	} else {
+		champs.Bool(following) // unk3: Following (false par defaut !)
+		champs.Bool(true)      // unk4: CommentsEnabled (active les commentaires)
+		champs.Bool(false)     // unk5: TagsLocked
+	}
 
 	// Le SENS de ces tables vient de TheGreatRambler/MariOver, un client qui lit les
 	// vrais serveurs de Nintendo. Kinnay donne leur FORME (map<u8,u32>) mais pas ce
@@ -787,6 +791,16 @@ var SMM2EstOfficielFn func(pid uint64) bool
 func SMM2EstOfficiel(pid uint64) bool {
 	if SMM2EstOfficielFn != nil {
 		return SMM2EstOfficielFn(pid)
+	}
+	return false
+}
+
+// SMM2EstSuiviFn : determine si un abonné (demandeur) suit un createur.
+var SMM2EstSuiviFn func(demandeur, createur uint64) bool
+
+func SMM2EstSuivi(demandeur, createur uint64) bool {
+	if SMM2EstSuiviFn != nil {
+		return SMM2EstSuiviFn(demandeur, createur)
 	}
 	return false
 }
