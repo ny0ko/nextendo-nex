@@ -360,12 +360,13 @@ func ecrireUserInfo(out *StreamOut, p SMM2Profil) {
 	// multiplayer_stats porte bien les quinze cles 0 a 14, dont la cle 1 = 1 pour un
 	// compte sans parties versus. Le jeu fournit les valeurs via SMM2StatsMultijoueur.
 
-	// play_stats : 0 parties, 1 reussites, 2 tentatives, 3 morts.
+	// play_stats : 0 reussites (clears), 1 parties (plays), 2 tentatives (attempts), 3 morts (deaths).
 	//
-	// Les morts restent a zero : personne ne nous les envoie. Le client rapporte le
-	// resultat d'une partie (methode 96) mais pas le nombre de fois qu'on y est mort,
-	// et l'inventer serait afficher un chiffre faux a cote de trois vrais.
-	stats(st.Parties, st.Reussites, st.Tentatives, 0)
+	// Cle 0 = niveaux termines (reussites). SMM2 l'affiche sur le drapeau d'arrivee de la carte de createur
+	// et sur le classement mondial ClearRanking (methode 57).
+	// Cle 1 = niveaux joues (parties). SMM2 l'affiche a cote de l'icone de marche/course de Mario.
+	// Inverser cle 0 et cle 1 affichait plus de niveaux termines que de niveaux joues.
+	stats(st.Reussites, st.Parties, st.Tentatives, 0)
 
 	// maker_stats : 0 « j'aime » recus, 1 points de createur.
 	stats(st.LikesRecus, st.PointsCreateur)
